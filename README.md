@@ -1,2 +1,3 @@
-# gonc
-Gopher sync
+# GONC
+
+Synchronize Gopher folders.
