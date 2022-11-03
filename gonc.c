@@ -9,6 +9,12 @@
 
 #define VERSION "0.1"
 
+struct file_data {
+    char* path;
+    time_t mtime;
+    struct file_data* next;
+};
+
 void print_usage() {
     printf("gonc " VERSION "\n");
 }
@@ -59,7 +65,20 @@ int main(int argc, char* argv[argc+1]) {
             printf("path: %s\nname: %s\n", file->fts_path, file->fts_name);
             printf("pathlen: %i\nnamelen: %i\n", file->fts_pathlen, file->fts_namelen);
             time_t const* mtime = &file->fts_statp->st_mtime;
-            printf("%s\n", ctime(mtime));
+            printf("%s", ctime(mtime));
+
+            struct file_data* head = malloc(sizeof *head);
+            if (head == NULL) {
+                perror(NULL);
+                return EXIT_SUCCESS;
+            }
+            head->path = malloc((file->fts_pathlen + 1) * sizeof *head->path);
+            strncpy(head->path, file->fts_path, file->fts_pathlen + 1);
+            head->mtime = file->fts_statp->st_mtime;
+            head->next = NULL;
+            printf("%s\n", head->path);
+            free(head->path);
+            free(head);
         }
     }
 
