@@ -76,14 +76,16 @@ int main(int argc, char* argv[argc+1]) {
                 return EXIT_SUCCESS;
             }
 
-            current->path = malloc((file->fts_pathlen + 1) * sizeof *current->path);
-            strncpy(current->path, file->fts_path, file->fts_pathlen + 1);
+            char const*const relative_path = file->fts_path + strlen(source_path);
+            size_t relative_pathlen = strlen(relative_path) + 1; // including terminating '\0'
+
+            current->path = malloc(relative_pathlen * sizeof *current->path);
+            strncpy(current->path, relative_path, relative_pathlen);
+
             current->mtime = file->fts_statp->st_mtime;
             current->next = NULL;
 
-            if (head == NULL) {
-                head = current;
-            }
+            if (head == NULL) head = current;
 
             if (previous) list_insert(previous, current);
             previous = current;
