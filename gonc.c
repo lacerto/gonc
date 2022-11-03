@@ -34,6 +34,11 @@ int isdir(char const*const path) {
     return 0;
 }
 
+void list_insert(struct file_data* current, struct file_data* new) {
+    new->next = current->next;
+    current->next = new;
+}
+
 int main(int argc, char* argv[argc+1]) {
     FTS* file_hierarchy;
     FTSENT* file;
@@ -60,26 +65,40 @@ int main(int argc, char* argv[argc+1]) {
         return EXIT_FAILURE;
     }
 
+    struct file_data* head = NULL;
+    struct file_data* previous = NULL;
+
     while ( (file = fts_read(file_hierarchy)) != NULL ) {
         if (file->fts_info == FTS_F) {
-            printf("path: %s\nname: %s\n", file->fts_path, file->fts_name);
-            printf("pathlen: %i\nnamelen: %i\n", file->fts_pathlen, file->fts_namelen);
-            time_t const* mtime = &file->fts_statp->st_mtime;
-            printf("%s", ctime(mtime));
-
-            struct file_data* head = malloc(sizeof *head);
-            if (head == NULL) {
+            struct file_data* current = malloc(sizeof *current);
+            if (current == NULL) {
                 perror(NULL);
                 return EXIT_SUCCESS;
             }
-            head->path = malloc((file->fts_pathlen + 1) * sizeof *head->path);
-            strncpy(head->path, file->fts_path, file->fts_pathlen + 1);
-            head->mtime = file->fts_statp->st_mtime;
-            head->next = NULL;
-            printf("%s\n", head->path);
-            free(head->path);
-            free(head);
+
+            current->path = malloc((file->fts_pathlen + 1) * sizeof *current->path);
+            strncpy(current->path, file->fts_path, file->fts_pathlen + 1);
+            current->mtime = file->fts_statp->st_mtime;
+            current->next = NULL;
+
+            if (head == NULL) {
+                head = current;
+            }
+
+            if (previous) list_insert(previous, current);
+            previous = current;
         }
+    }
+
+    while (head) {
+        printf("%s\n", head->path);
+        time_t const* mtime = &head->mtime;
+        printf("%s", ctime(mtime));
+
+        struct file_data* tmp = head;
+        head = tmp->next;
+        free(tmp->path);
+        free(tmp);
     }
 
     return EXIT_SUCCESS;
