@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <time.h>
 #include <sys/types.h>
@@ -51,9 +52,12 @@ int main(int argc, char* argv[argc+1]) {
     char* const source_path = argv[1];
     char* const destination_path = argv[2];
 
-    // Remove trailing '/' from source path if there is one.
+    // Remove trailing '/' from paths.
     if (source_path[strlen(source_path) - 1] == '/') 
         source_path[strlen(source_path) - 1] = '\0';
+
+    if (destination_path[strlen(destination_path) - 1] == '/') 
+        destination_path[strlen(destination_path) - 1] = '\0';
 
     if (isdir(source_path) == -1) return EXIT_FAILURE;
     if (isdir(destination_path) == -1) return EXIT_FAILURE;
@@ -92,10 +96,41 @@ int main(int argc, char* argv[argc+1]) {
         }
     }
 
+    size_t destlen = strlen(destination_path);
+
     while (head) {
-        printf("%s\n", head->path);
+        printf("\n%s\n", head->path);
         time_t const* mtime = &head->mtime;
         printf("%s", ctime(mtime));
+
+        size_t plen = strlen(head->path);
+        char* path = malloc((destlen + plen + 1) * sizeof *path);
+
+        strncpy(path, destination_path, destlen + 1);
+        strncat(path, head->path, plen);
+        printf("Path: %s\n", path);
+
+        struct stat file_stat;
+
+        bool copy_file = false;
+        if (stat(path, &file_stat) == -1) {
+            if (errno == ENOENT) {
+                printf("Does not exist.\n");
+                copy_file = true;
+            } else {
+                perror(NULL);
+                return EXIT_FAILURE;
+            }
+        } else {
+            printf("Dest file mtime: %s", ctime((time_t const*) &file_stat.st_mtime));
+            double time_diff = difftime(head->mtime, file_stat.st_mtime);
+            printf("Mtime diff: %g\n", time_diff);
+            if (time_diff > 0.0) copy_file = true; 
+        }
+
+        if (copy_file) {
+            printf("File must be copied.\n");
+        }
 
         struct file_data* tmp = head;
         head = tmp->next;
