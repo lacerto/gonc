@@ -8,7 +8,7 @@
 #include <fts.h>
 #include <errno.h>
 
-#define VERSION "0.1"
+#define VERSION "0.2 (2022-11-05)"
 
 struct file_data {
     char* path;
@@ -16,26 +16,48 @@ struct file_data {
     struct file_data* next;
 };
 
-void print_usage() {
-    printf("gonc " VERSION "\n");
+void print_version() {
+    printf("This is gonc version " VERSION ".\n");
 }
 
-int isdir(char const*const path) {
+/*
+ * Prints usage information.
+ */
+void print_usage() {
+    printf("\nSynchronizes gopher directories.\n\n");
+    printf("Usage:\n");
+    printf("\tgonc source_dir destination_dir\n");
+    printf("\tgonc -h\n");
+    printf("\tgonc -v\n");
+    printf("\nOptions:\n");
+    printf("\t-h\tShow this help.\n");
+    printf("\t-v\tShow the version number.\n");
+}
+
+bool isdir(char const*const path) {
     struct stat file_stat;
 
     if (stat(path, &file_stat) == -1) {
-        perror(NULL);
-        return -1;
+        perror(path);
+        return false;
     }
 
     if (!S_ISDIR(file_stat.st_mode)) {
         printf("'%s' must be a directory.\n", path);
-        return -1;
+        return false;
     }
-    return 0;
+    return true;
 }
 
-void list_insert(struct file_data* current, struct file_data* new) {
+void remove_trailing_slash(char* const path) {
+    size_t length = strlen(path);
+    if (length == 0) return;
+
+    char* p = path + (length -1);
+    if (*p == '/') *p = '\0';
+}
+
+void list_insert(struct file_data* restrict current, struct file_data* restrict new) {
     new->next = current->next;
     current->next = new;
 }
@@ -44,23 +66,32 @@ int main(int argc, char* argv[argc+1]) {
     FTS* file_hierarchy;
     FTSENT* file;
 
-    if (argc != 3) {
-        print_usage();
-        return EXIT_FAILURE;
+    switch (argc) {
+        case 3:
+            print_version();
+            break;
+        case 2:
+            if (strncmp(argv[1], "-h", 2) == 0) {
+                print_usage();
+                return EXIT_SUCCESS;
+            } else if (strncmp(argv[1], "-v", 2) == 0) {
+                print_version();
+                return EXIT_SUCCESS;
+            }
+            // falls through
+        default:
+            print_usage();
+            return EXIT_FAILURE;
     }
 
     char* const source_path = argv[1];
     char* const destination_path = argv[2];
 
-    // Remove trailing '/' from paths.
-    if (source_path[strlen(source_path) - 1] == '/') 
-        source_path[strlen(source_path) - 1] = '\0';
+    remove_trailing_slash(source_path);
+    remove_trailing_slash(destination_path);
 
-    if (destination_path[strlen(destination_path) - 1] == '/') 
-        destination_path[strlen(destination_path) - 1] = '\0';
-
-    if (isdir(source_path) == -1) return EXIT_FAILURE;
-    if (isdir(destination_path) == -1) return EXIT_FAILURE;
+    if (!isdir(source_path)) return EXIT_FAILURE;
+    if (!isdir(destination_path)) return EXIT_FAILURE;
 
     char* const path[2] = { source_path, NULL };
     file_hierarchy = fts_open(path, FTS_LOGICAL, NULL);
