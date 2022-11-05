@@ -57,14 +57,61 @@ void remove_trailing_slash(char* const path) {
     if (*p == '/') *p = '\0';
 }
 
+struct file_data* get_sentinel_node() {
+    struct file_data* sentinel = malloc(sizeof *sentinel);
+    if (sentinel == NULL) {
+        perror("Failed to allocate memory for list head");
+        exit(EXIT_FAILURE);
+    } else {
+        sentinel->path = NULL;
+        sentinel->mtime = 0;
+        sentinel->path = NULL;
+        return sentinel;
+    }
+}
+
 void list_insert(struct file_data* restrict current, struct file_data* restrict new) {
     new->next = current->next;
     current->next = new;
 }
 
-int main(int argc, char* argv[argc+1]) {
+void get_file_list(struct file_data* head, char* const restrict dirpath) {
     FTS* file_hierarchy;
     FTSENT* file;
+
+    char* const path[2] = { dirpath, NULL };
+    file_hierarchy = fts_open(path, FTS_LOGICAL, NULL);
+    if (errno) {
+        perror("Could not open file hierarchy");
+        exit(EXIT_FAILURE);
+    }
+
+    struct file_data* previous = head;
+
+    while ( (file = fts_read(file_hierarchy)) != NULL ) {
+        if (file->fts_info == FTS_F) {
+            struct file_data* current = malloc(sizeof *current);
+            if (current == NULL) {
+                perror("Could not allocate memory for file data");
+                exit(EXIT_SUCCESS);
+            }
+
+            char const*const relative_path = file->fts_path + strlen(dirpath);
+            size_t relative_pathlen = strlen(relative_path) + 1; // including terminating '\0'
+
+            current->path = malloc(relative_pathlen * sizeof *current->path);
+            strncpy(current->path, relative_path, relative_pathlen);
+
+            current->mtime = file->fts_statp->st_mtime;
+            current->next = NULL;
+
+            list_insert(previous, current);
+            previous = current;
+        }
+    }
+}
+
+int main(int argc, char* argv[argc+1]) {
 
     switch (argc) {
         case 3:
@@ -93,52 +140,23 @@ int main(int argc, char* argv[argc+1]) {
     if (!isdir(source_path)) return EXIT_FAILURE;
     if (!isdir(destination_path)) return EXIT_FAILURE;
 
-    char* const path[2] = { source_path, NULL };
-    file_hierarchy = fts_open(path, FTS_LOGICAL, NULL);
-    if (errno) {
-        perror(NULL);
-        return EXIT_FAILURE;
-    }
+    struct file_data* src_head = get_sentinel_node();
 
-    struct file_data* head = NULL;
-    struct file_data* previous = NULL;
-
-    while ( (file = fts_read(file_hierarchy)) != NULL ) {
-        if (file->fts_info == FTS_F) {
-            struct file_data* current = malloc(sizeof *current);
-            if (current == NULL) {
-                perror(NULL);
-                return EXIT_SUCCESS;
-            }
-
-            char const*const relative_path = file->fts_path + strlen(source_path);
-            size_t relative_pathlen = strlen(relative_path) + 1; // including terminating '\0'
-
-            current->path = malloc(relative_pathlen * sizeof *current->path);
-            strncpy(current->path, relative_path, relative_pathlen);
-
-            current->mtime = file->fts_statp->st_mtime;
-            current->next = NULL;
-
-            if (head == NULL) head = current;
-
-            if (previous) list_insert(previous, current);
-            previous = current;
-        }
-    }
+    get_file_list(src_head, source_path);
 
     size_t destlen = strlen(destination_path);
 
-    while (head) {
-        printf("\n%s\n", head->path);
-        time_t const* mtime = &head->mtime;
+    struct file_data* it = src_head->next;
+    while (it) {
+        printf("\n%s\n", it->path);
+        time_t const* mtime = &it->mtime;
         printf("%s", ctime(mtime));
 
-        size_t plen = strlen(head->path);
+        size_t plen = strlen(it->path);
         char* path = malloc((destlen + plen + 1) * sizeof *path);
 
         strncpy(path, destination_path, destlen + 1);
-        strncat(path, head->path, plen);
+        strncat(path, it->path, plen);
         printf("Path: %s\n", path);
 
         struct stat file_stat;
@@ -154,7 +172,7 @@ int main(int argc, char* argv[argc+1]) {
             }
         } else {
             printf("Dest file mtime: %s", ctime((time_t const*) &file_stat.st_mtime));
-            double time_diff = difftime(head->mtime, file_stat.st_mtime);
+            double time_diff = difftime(it->mtime, file_stat.st_mtime);
             printf("Mtime diff: %g\n", time_diff);
             if (time_diff > 0.0) copy_file = true; 
         }
@@ -163,11 +181,13 @@ int main(int argc, char* argv[argc+1]) {
             printf("File must be copied.\n");
         }
 
-        struct file_data* tmp = head;
-        head = tmp->next;
+        struct file_data* tmp = it;
+        it = tmp->next;
         free(tmp->path);
         free(tmp);
     }
+
+    free(src_head);
 
     return EXIT_SUCCESS;
 }
