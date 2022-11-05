@@ -75,6 +75,18 @@ void list_insert(struct file_data* restrict current, struct file_data* restrict 
     current->next = new;
 }
 
+void free_list(struct file_data* restrict head) {
+    struct file_data* current = head->next;
+    struct file_data* next;
+    while (current) {
+        next = current->next;
+        free(current->path);
+        free(current);
+        current = next;
+    }
+    free(head); // free the sentinel
+}
+
 void get_file_list(struct file_data* head, char* const restrict dirpath) {
     FTS* file_hierarchy;
     FTSENT* file;
@@ -146,8 +158,7 @@ int main(int argc, char* argv[argc+1]) {
 
     size_t destlen = strlen(destination_path);
 
-    struct file_data* it = src_head->next;
-    while (it) {
+    for (struct file_data* it = src_head->next; it; it = it->next) {
         printf("\n%s\n", it->path);
         time_t const* mtime = &it->mtime;
         printf("%s", ctime(mtime));
@@ -180,14 +191,9 @@ int main(int argc, char* argv[argc+1]) {
         if (copy_file) {
             printf("File must be copied.\n");
         }
-
-        struct file_data* tmp = it;
-        it = tmp->next;
-        free(tmp->path);
-        free(tmp);
     }
 
-    free(src_head);
+    free_list(src_head);
 
     return EXIT_SUCCESS;
 }
