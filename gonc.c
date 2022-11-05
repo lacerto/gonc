@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <time.h>
 #include <sys/types.h>
@@ -111,12 +112,24 @@ int main(int argc, char* argv[argc+1]) {
 
         struct stat file_stat;
 
+        bool copy_file = false;
         if (stat(path, &file_stat) == -1) {
-            if (errno == ENOENT) printf("Does not exist.\n");
-            else {
+            if (errno == ENOENT) {
+                printf("Does not exist.\n");
+                copy_file = true;
+            } else {
                 perror(NULL);
                 return EXIT_FAILURE;
             }
+        } else {
+            printf("Dest file mtime: %s", ctime((time_t const*) &file_stat.st_mtime));
+            double time_diff = difftime(head->mtime, file_stat.st_mtime);
+            printf("Mtime diff: %g\n", time_diff);
+            if (time_diff > 0.0) copy_file = true; 
+        }
+
+        if (copy_file) {
+            printf("File must be copied.\n");
         }
 
         struct file_data* tmp = head;
