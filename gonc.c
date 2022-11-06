@@ -14,6 +14,7 @@ struct file_data {
     char* relative_path;
     char* full_path;
     time_t mtime;
+    off_t size;
     struct file_data* next;
 };
 
@@ -200,6 +201,7 @@ void get_file_list(struct file_data* head, char* const dirpath) {
             strncpy(current->relative_path, relative_path, relative_pathlen);
 
             current->mtime = file->fts_statp->st_mtime;
+            current->size = file->fts_statp->st_size;
             current->next = NULL;
 
             list_insert(previous, current);
@@ -254,6 +256,7 @@ int main(int argc, char* argv[argc+1]) {
     for (struct file_data* it = src_head->next; it; it = it->next) {
         printf("\nFull path:     %s\n", it->full_path);
         printf("Relative path: %s\n", it->relative_path);
+        printf("File size: %lld\n", it->size);
 
         bool copy_file = false;
         struct file_data* previous = search_list(dest_head, it->relative_path);
