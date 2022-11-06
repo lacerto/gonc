@@ -65,7 +65,7 @@ struct file_data* get_sentinel_node() {
     } else {
         sentinel->path = NULL;
         sentinel->mtime = 0;
-        sentinel->path = NULL;
+        sentinel->next = NULL;
         return sentinel;
     }
 }
@@ -73,6 +73,15 @@ struct file_data* get_sentinel_node() {
 void list_insert(struct file_data* restrict current, struct file_data* restrict new) {
     new->next = current->next;
     current->next = new;
+}
+
+void list_remove(struct file_data* const restrict previous) {
+    struct file_data* obsolete_node = previous->next;
+    if (obsolete_node) {
+        previous->next = obsolete_node->next;
+        free(obsolete_node->path);
+        free(obsolete_node);
+    }
 }
 
 void free_list(struct file_data* restrict head) {
@@ -85,6 +94,20 @@ void free_list(struct file_data* restrict head) {
         current = next;
     }
     free(head); // free the sentinel
+}
+
+struct file_data* search_list(struct file_data* const restrict head, char* const path) {
+    struct file_data* previous = head;
+    struct file_data* current = head->next;
+
+    while (current) {
+        if (strcmp(current->path, path) == 0) {
+            return previous;
+        }
+        previous = current;
+        current = current->next;
+    }
+    return NULL;
 }
 
 void get_file_list(struct file_data* head, char* const restrict dirpath) {
@@ -153,47 +176,54 @@ int main(int argc, char* argv[argc+1]) {
     if (!isdir(destination_path)) return EXIT_FAILURE;
 
     struct file_data* src_head = get_sentinel_node();
-
     get_file_list(src_head, source_path);
+
+    struct file_data* dest_head = get_sentinel_node();
+    get_file_list(dest_head, destination_path);
 
     size_t destlen = strlen(destination_path);
 
     for (struct file_data* it = src_head->next; it; it = it->next) {
         printf("\n%s\n", it->path);
-        time_t const* mtime = &it->mtime;
-        printf("%s", ctime(mtime));
-
-        size_t plen = strlen(it->path);
-        char* path = malloc((destlen + plen + 1) * sizeof *path);
-
-        strncpy(path, destination_path, destlen + 1);
-        strncat(path, it->path, plen);
-        printf("Path: %s\n", path);
-
-        struct stat file_stat;
 
         bool copy_file = false;
-        if (stat(path, &file_stat) == -1) {
-            if (errno == ENOENT) {
-                printf("Does not exist.\n");
-                copy_file = true;
-            } else {
-                perror(NULL);
-                return EXIT_FAILURE;
-            }
-        } else {
-            printf("Dest file mtime: %s", ctime((time_t const*) &file_stat.st_mtime));
-            double time_diff = difftime(it->mtime, file_stat.st_mtime);
+        struct file_data* previous = search_list(dest_head, it->path);
+        if (previous) {
+            struct file_data* destination_file = previous->next;
+
+            time_t const* mtime = &it->mtime;
+            printf("Source mtime:      %s", ctime(mtime));
+            mtime = &destination_file->mtime;
+            printf("Destination mtime: %s", ctime(mtime));
+
+            double time_diff = difftime(it->mtime, destination_file->mtime);
             printf("Mtime diff: %g\n", time_diff);
             if (time_diff > 0.0) copy_file = true; 
+            list_remove(previous);
+        } else {
+            printf("Not found.\n");
+            copy_file = true;
         }
+
+        // size_t plen = strlen(it->path);
+        // char* path = malloc((destlen + plen + 1) * sizeof *path);
+
+        // strncpy(path, destination_path, destlen + 1);
+        // strncat(path, it->path, plen);
+        // printf("Path: %s\n", path);
 
         if (copy_file) {
             printf("File must be copied.\n");
         }
     }
 
+    printf("\nFiles not present in source:\n");
+    for (struct file_data* it = dest_head->next; it; it = it->next) {
+        printf("\t%s\n", it->path);
+    }
+
     free_list(src_head);
+    free_list(dest_head);
 
     return EXIT_SUCCESS;
 }
