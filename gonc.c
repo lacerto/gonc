@@ -102,18 +102,13 @@ void list_insert(struct file_data* restrict current, struct file_data* restrict 
 }
 
 /*
-Removes the node from thee singly linked list that
-comes right after the 'previous' node.
-The removed node and its contained data are freed.
+Frees a single list node.
+The node and its contained data are freed.
 */
-void list_remove(struct file_data* const previous) {
-    struct file_data* obsolete_node = previous->next;
-    if (obsolete_node) {
-        previous->next = obsolete_node->next;
-        free(obsolete_node->full_path);
-        free(obsolete_node->relative_path);
-        free(obsolete_node);
-    }
+void free_list_node(struct file_data* node) {
+        free(node->full_path);
+        free(node->relative_path);
+        free(node);
 }
 
 /*
@@ -124,12 +119,23 @@ void free_list(struct file_data* head) {
     struct file_data* current = head->next;
     while (current) {
         struct file_data* next = current->next;
-        free(current->full_path);
-        free(current->relative_path);
-        free(current);
+        free_list_node(current);
         current = next;
     }
-    free(head); // free the sentinel
+    free_list_node(head); // free the sentinel
+}
+
+/*
+Removes the node from thee singly linked list that
+comes right after the 'previous' node.
+The removed node and its contained data are freed.
+*/
+void list_remove(struct file_data* const previous) {
+    struct file_data* obsolete_node = previous->next;
+    if (obsolete_node) {
+        previous->next = obsolete_node->next;
+        free_list_node(obsolete_node);
+    }
 }
 
 /*
