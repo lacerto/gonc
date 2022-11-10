@@ -11,7 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "0.3 (2022-11-06)"
+#define VERSION "0.9 (2022-11-10)"
 
 struct file_data {
     char* relative_path;
@@ -226,35 +226,61 @@ error_handling:
 }
 
 void copy_file(char const*const from_path, char const*const to_path, off_t size, bool to_exists) {
+    if (size == 0) {
+        fprintf(stderr, "File size is 0: %s\n", from_path);
+        return;
+    }
+
+    if (size > 8 * 1048576) {
+        fprintf(
+            stderr,
+            "File size exceeds 8 MB: %s\n"
+            "Copying large files is not implemented.\n",
+            from_path
+        );
+        return;
+    }
+
     int from_fd = open(from_path, O_RDONLY);
-    if (from_fd == -1) goto error_from;
+    if (from_fd == -1) {
+        char msg[15 + strlen(from_path) + 1];
+        sprintf(msg, "Could not open %s", from_path);
+        perror(msg);
+        return;
+    }
 
     int to_fd;
-    if (to_exists) {
-        printf("open '%s'\n", to_path);
+    if (to_exists)
         to_fd = open(to_path, O_WRONLY | O_TRUNC);
-        if (to_fd == -1) goto error_to;
-    } else {
+    else
         to_fd = open(to_path, O_WRONLY | O_TRUNC | O_CREAT, 0666);
+
+    if (to_fd == -1) {
+        char msg[15 + strlen(to_path) + 1];
+        sprintf(msg, "Could not open %s", to_path);
+        perror(msg);
+        close(from_fd);
+        return;
     }
 
     char* data = mmap(NULL, size, PROT_READ, MAP_FILE | MAP_PRIVATE, from_fd, 0);
-    if (data == MAP_FAILED) goto error_map;
+    if (data == MAP_FAILED) {
+        perror("mmap failed");
+        goto error;
+    }
 
     madvise(data, size, MADV_SEQUENTIAL);
-    if (write(to_fd, data, size) != size) goto error_map;
-    if (munmap(data, size) == -1) goto error_map;
+    if (write(to_fd, data, size) != size) {
+        perror("Could not write file");
+        goto error;
+    }
 
+    if (munmap(data, size) == -1)
+        perror("munmap failed");
+
+error:
     close(to_fd);
     close(from_fd);
-    return;
-
-error_map:
-    close(to_fd);
-error_to:
-    close(from_fd);
-error_from:
-    perror("Copy");
     return;
 }
 
@@ -313,9 +339,10 @@ int main(int argc, char* argv[argc+1]) {
 
             double time_diff = difftime(src->mtime, destination_file->mtime);
             printf("Mtime diff: %g\n", time_diff);
-            if (time_diff > 0.0) {
+            if (time_diff > 0.0)
                 copy = true;
-            }
+            else
+                list_remove(previous);
         } else {
             printf("Not found at destination.\n");
             copy = true;
