@@ -1,12 +1,15 @@
+#include <errno.h>
+#include <fcntl.h>
+#include <fts.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
-#include <time.h>
-#include <sys/types.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
-#include <fts.h>
-#include <errno.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 
 #define VERSION "0.3 (2022-11-06)"
 
@@ -222,6 +225,39 @@ error_handling:
     exit(EXIT_FAILURE);
 }
 
+void copy_file(char const*const from_path, char const*const to_path, off_t size, bool to_exists) {
+    int from_fd = open(from_path, O_RDONLY);
+    if (from_fd == -1) goto error_from;
+
+    int to_fd;
+    if (to_exists) {
+        printf("open '%s'\n", to_path);
+        to_fd = open(to_path, O_WRONLY | O_TRUNC);
+        if (to_fd == -1) goto error_to;
+    } else {
+        to_fd = open(to_path, O_WRONLY | O_TRUNC | O_CREAT, 0666);
+    }
+
+    char* data = mmap(NULL, size, PROT_READ, MAP_FILE | MAP_PRIVATE, from_fd, 0);
+    if (data == MAP_FAILED) goto error_map;
+
+    madvise(data, size, MADV_SEQUENTIAL);
+    if (write(to_fd, data, size) != size) goto error_map;
+    if (munmap(data, size) == -1) goto error_map;
+
+    close(to_fd);
+    close(from_fd);
+    return;
+
+error_map:
+    close(to_fd);
+error_to:
+    close(from_fd);
+error_from:
+    perror("Copy");
+    return;
+}
+
 int main(int argc, char* argv[argc+1]) {
 
     switch (argc) {
@@ -257,36 +293,58 @@ int main(int argc, char* argv[argc+1]) {
     struct file_data* dest_head = get_sentinel_node();
     get_file_list(dest_head, destination_path);
 
-    size_t destlen = strlen(destination_path);
+    for (struct file_data* src = src_head->next; src; src = src->next) {
+        printf("\nFull path:     %s\n", src->full_path);
+        printf("Relative path: %s\n", src->relative_path);
+        printf("File size: %lld\n", src->size);
 
-    for (struct file_data* it = src_head->next; it; it = it->next) {
-        printf("\nFull path:     %s\n", it->full_path);
-        printf("Relative path: %s\n", it->relative_path);
-        printf("File size: %lld\n", it->size);
-
-        bool copy_file = false;
-        struct file_data* previous = search_list(dest_head, it->relative_path);
+        bool copy = false;
+        struct file_data* previous = search_list(dest_head, src->relative_path);
+        struct file_data* destination_file = NULL;
         if (previous) {
-            struct file_data* destination_file = previous->next;
+            destination_file = previous->next;
 
             printf("Found at destination: %s\n", destination_file->full_path);
 
-            time_t const* mtime = &it->mtime;
+            time_t const* mtime = &src->mtime;
             printf("Source mtime:      %s", ctime(mtime));
             mtime = &destination_file->mtime;
             printf("Destination mtime: %s", ctime(mtime));
 
-            double time_diff = difftime(it->mtime, destination_file->mtime);
+            double time_diff = difftime(src->mtime, destination_file->mtime);
             printf("Mtime diff: %g\n", time_diff);
-            if (time_diff > 0.0) copy_file = true; 
-            list_remove(previous);
+            if (time_diff > 0.0) {
+                copy = true;
+            }
         } else {
             printf("Not found at destination.\n");
-            copy_file = true;
+            copy = true;
         }
 
-        if (copy_file) {
-            printf("File must be copied:\n");
+        if (copy) {
+            printf("File must be copied.\n");
+            if (destination_file) {
+                copy_file(
+                    src->full_path, 
+                    destination_file->full_path, 
+                    src->size,
+                    true
+                );
+                list_remove(previous);
+            } else {
+                size_t destlen = strlen(destination_path);
+                size_t rplen = strlen(src->relative_path);
+                char* dest_full_path = malloc((destlen + rplen + 1) * sizeof *dest_full_path);
+                strncpy(dest_full_path, destination_path, destlen + 1);
+                strncat(dest_full_path, src->relative_path, rplen);
+                copy_file(
+                    src->full_path,
+                    dest_full_path,
+                    src->size,
+                    false
+                );
+                free(dest_full_path);
+            }
         } else {
             printf("File won't be copied.\n");
         }
