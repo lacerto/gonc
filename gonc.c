@@ -203,7 +203,7 @@ void get_file_list(struct file_data* head, char* const dirpath) {
             size_t relative_pathlen = strlen(relative_path) + 1; // including terminating '\0'
 
             current->relative_path = malloc(relative_pathlen * sizeof *current->relative_path);
-            if (current->full_path == NULL) {
+            if (current->relative_path == NULL) {
                 sprintf(error_text, "Could not allocate memory for relative path");
                 goto error_handling;
             }
@@ -362,15 +362,24 @@ int main(int argc, char* argv[argc+1]) {
                 size_t destlen = strlen(destination_path);
                 size_t rplen = strlen(src->relative_path);
                 char* dest_full_path = malloc((destlen + rplen + 1) * sizeof *dest_full_path);
-                strncpy(dest_full_path, destination_path, destlen + 1);
-                strncat(dest_full_path, src->relative_path, rplen);
-                copy_file(
-                    src->full_path,
-                    dest_full_path,
-                    src->size,
-                    false
-                );
-                free(dest_full_path);
+                if (dest_full_path) {
+                    strncpy(dest_full_path, destination_path, destlen + 1);
+                    strncat(dest_full_path, src->relative_path, rplen);
+                    copy_file(
+                        src->full_path,
+                        dest_full_path,
+                        src->size,
+                        false
+                    );
+                    free(dest_full_path);
+                } else {
+                    fprintf(
+                        stderr, 
+                        "Could not allocate memory for destination path.\n"
+                        "File won't be copied: %s\n",
+                        src->relative_path
+                    );
+                }
             }
         } else {
             printf("File won't be copied.\n");
