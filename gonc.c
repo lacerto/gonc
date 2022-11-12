@@ -309,6 +309,57 @@ error:
     return;
 }
 
+bool create_path(char const*const base, char const*const relative) {
+    struct stat dir_stat;
+
+    size_t base_len = strlen(base);
+    size_t relative_len = strlen(relative);
+
+    char* full_path = malloc((base_len + relative_len + 1) * sizeof *full_path);
+    if (full_path == NULL) {
+        perror("Could not allocate memory for path (create_path)");
+        exit(EXIT_FAILURE);
+    }
+
+    strncpy(full_path, base, base_len + 1);
+    strncat(full_path, relative, relative_len);
+
+    char* p = full_path + base_len;
+
+    while(true) {
+        p += strspn(p, "/");
+		p += strcspn(p, "/");
+        if (*p == '\0') break;
+
+		*p = '\0';
+
+        if (stat(full_path, &dir_stat) == -1) {
+            if (errno == ENOENT) {
+                if (mkdir(full_path, 0777) == -1) {
+                    perror("Could not create directory");
+                    free(full_path);
+                    return false;
+                }
+            } else {
+                perror("Could not check directory, stat failed");
+                free(full_path);
+                return false;
+            }
+        } else {
+            if (!S_ISDIR(dir_stat.st_mode)) {
+                printf("Not a directory.\n");
+                free(full_path);
+                return false;
+            }
+        }
+
+        printf("%s\n", full_path);
+        *p = '/';
+    }
+    free(full_path);
+    return true;
+}
+
 int main(int argc, char* argv[argc+1]) {
 
     switch (argc) {
@@ -391,13 +442,16 @@ int main(int argc, char* argv[argc+1]) {
                 if (dest_full_path) {
                     strncpy(dest_full_path, destination_path, destlen + 1);
                     strncat(dest_full_path, src->relative_path, rplen);
-                    copy_file(
-                        src->full_path,
-                        dest_full_path,
-                        src->size,
-                        src->mode,
-                        false
-                    );
+
+                    if (create_path(destination_path, src->relative_path)) {
+                        copy_file(
+                            src->full_path,
+                            dest_full_path,
+                            src->size,
+                            src->mode,
+                            false
+                        );
+                    }
                     free(dest_full_path);
                 } else {
                     fprintf(
