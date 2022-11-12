@@ -18,6 +18,7 @@ struct file_data {
     char* full_path;
     time_t mtime;
     off_t size;
+    mode_t mode;
     struct file_data* next;
 };
 
@@ -211,6 +212,7 @@ void get_file_list(struct file_data* head, char* const dirpath) {
 
             current->mtime = file->fts_statp->st_mtime;
             current->size = file->fts_statp->st_size;
+            current->mode = file->fts_statp->st_mode;
             current->next = NULL;
 
             list_insert(previous, current);
@@ -225,7 +227,26 @@ error_handling:
     exit(EXIT_FAILURE);
 }
 
-void copy_file(char const*const from_path, char const*const to_path, off_t size, bool to_exists) {
+/*
+Copies file 'from_path' to 'to_path'.
+If 'to_path' already exists it will be truncated and overwritten.
+If it does not exist a new file will be created. The new file's
+mode is the 'mode' from 'from_path' without the setuid/setgid bits.
+Remember that mode still gets modified by the umask(2) value.
+See open(2).
+
+This function expects that 'to_path' has already been tested and
+whether it exists or not will be passed as a boolean value in
+'to_exists'.
+Error messages go to stderr and the function returns to the caller.
+*/
+void copy_file(
+    char const*const from_path, 
+    char const*const to_path, 
+    off_t size,
+    mode_t mode,
+    bool to_exists
+) {
     if (size == 0) {
         fprintf(stderr, "File size is 0: %s\n", from_path);
         return;
@@ -253,7 +274,11 @@ void copy_file(char const*const from_path, char const*const to_path, off_t size,
     if (to_exists)
         to_fd = open(to_path, O_WRONLY | O_TRUNC);
     else
-        to_fd = open(to_path, O_WRONLY | O_TRUNC | O_CREAT, 0666);
+        to_fd = open(
+            to_path,
+            O_WRONLY | O_TRUNC | O_CREAT,
+            mode & ~(S_ISUID | S_ISGID)
+        );
 
     if (to_fd == -1) {
         char msg[15 + strlen(to_path) + 1];
@@ -355,6 +380,7 @@ int main(int argc, char* argv[argc+1]) {
                     src->full_path, 
                     destination_file->full_path, 
                     src->size,
+                    src->mode,
                     true
                 );
                 list_remove(previous);
@@ -369,6 +395,7 @@ int main(int argc, char* argv[argc+1]) {
                         src->full_path,
                         dest_full_path,
                         src->size,
+                        src->mode,
                         false
                     );
                     free(dest_full_path);
