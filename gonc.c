@@ -309,6 +309,16 @@ error:
     return;
 }
 
+/*
+Creates all the intermediate directories in the path if they
+do not exist.
+The full path consists of 'base' and 'relative'. 'base' must
+exist and be a directory, this function only cares about the
+directories in the 'relative' path.
+Returns true if all directories have been created successfully,
+false in the case of any errors.
+Terminates the whole program if memory cannot be allocated.
+*/
 bool create_path(char const*const base, char const*const relative) {
     struct stat dir_stat;
 
@@ -324,6 +334,7 @@ bool create_path(char const*const base, char const*const relative) {
     strncpy(full_path, base, base_len + 1);
     strncat(full_path, relative, relative_len);
 
+    // position p at the start of the relative path
     char* p = full_path + base_len;
 
     while(true) {
@@ -347,13 +358,12 @@ bool create_path(char const*const base, char const*const relative) {
             }
         } else {
             if (!S_ISDIR(dir_stat.st_mode)) {
-                printf("Not a directory.\n");
+                fprintf(stderr, "Not a directory: %s\n", full_path);
                 free(full_path);
                 return false;
             }
         }
 
-        printf("%s\n", full_path);
         *p = '/';
     }
     free(full_path);
@@ -398,7 +408,7 @@ int main(int argc, char* argv[argc+1]) {
     for (struct file_data* src = src_head->next; src; src = src->next) {
         printf("\nFull path:     %s\n", src->full_path);
         printf("Relative path: %s\n", src->relative_path);
-        printf("File size: %lld\n", src->size);
+        printf("File size: %lld\n", (long long)src->size);
 
         bool copy = false;
         struct file_data* previous = search_list(dest_head, src->relative_path);
