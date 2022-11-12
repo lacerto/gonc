@@ -1,20 +1,24 @@
+#include <errno.h>
+#include <fcntl.h>
+#include <fts.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
-#include <time.h>
-#include <sys/types.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
-#include <fts.h>
-#include <errno.h>
+#include <sys/types.h>
+#include <time.h>
+#include <unistd.h>
 
-#define VERSION "0.3 (2022-11-06)"
+#define VERSION "0.9 (2022-11-10)"
 
 struct file_data {
     char* relative_path;
     char* full_path;
     time_t mtime;
     off_t size;
+    mode_t mode;
     struct file_data* next;
 };
 
@@ -102,18 +106,13 @@ void list_insert(struct file_data* restrict current, struct file_data* restrict 
 }
 
 /*
-Removes the node from thee singly linked list that
-comes right after the 'previous' node.
-The removed node and its contained data are freed.
+Frees a single list node.
+The node and its contained data are freed.
 */
-void list_remove(struct file_data* const previous) {
-    struct file_data* obsolete_node = previous->next;
-    if (obsolete_node) {
-        previous->next = obsolete_node->next;
-        free(obsolete_node->full_path);
-        free(obsolete_node->relative_path);
-        free(obsolete_node);
-    }
+void free_list_node(struct file_data* node) {
+        free(node->full_path);
+        free(node->relative_path);
+        free(node);
 }
 
 /*
@@ -124,12 +123,23 @@ void free_list(struct file_data* head) {
     struct file_data* current = head->next;
     while (current) {
         struct file_data* next = current->next;
-        free(current->full_path);
-        free(current->relative_path);
-        free(current);
+        free_list_node(current);
         current = next;
     }
-    free(head); // free the sentinel
+    free_list_node(head); // free the sentinel
+}
+
+/*
+Removes the node from thee singly linked list that
+comes right after the 'previous' node.
+The removed node and its contained data are freed.
+*/
+void list_remove(struct file_data* const previous) {
+    struct file_data* obsolete_node = previous->next;
+    if (obsolete_node) {
+        previous->next = obsolete_node->next;
+        free_list_node(obsolete_node);
+    }
 }
 
 /*
@@ -194,7 +204,7 @@ void get_file_list(struct file_data* head, char* const dirpath) {
             size_t relative_pathlen = strlen(relative_path) + 1; // including terminating '\0'
 
             current->relative_path = malloc(relative_pathlen * sizeof *current->relative_path);
-            if (current->full_path == NULL) {
+            if (current->relative_path == NULL) {
                 sprintf(error_text, "Could not allocate memory for relative path");
                 goto error_handling;
             }
@@ -202,6 +212,7 @@ void get_file_list(struct file_data* head, char* const dirpath) {
 
             current->mtime = file->fts_statp->st_mtime;
             current->size = file->fts_statp->st_size;
+            current->mode = file->fts_statp->st_mode;
             current->next = NULL;
 
             list_insert(previous, current);
@@ -214,6 +225,88 @@ error_handling:
     perror(error_text);
     free_list(head);
     exit(EXIT_FAILURE);
+}
+
+/*
+Copies file 'from_path' to 'to_path'.
+If 'to_path' already exists it will be truncated and overwritten.
+If it does not exist a new file will be created. The new file's
+mode is the 'mode' from 'from_path' without the setuid/setgid bits.
+Remember that mode still gets modified by the umask(2) value.
+See open(2).
+
+This function expects that 'to_path' has already been tested and
+whether it exists or not will be passed as a boolean value in
+'to_exists'.
+Error messages go to stderr and the function returns to the caller.
+*/
+void copy_file(
+    char const*const from_path, 
+    char const*const to_path, 
+    off_t size,
+    mode_t mode,
+    bool to_exists
+) {
+    if (size == 0) {
+        fprintf(stderr, "File size is 0: %s\n", from_path);
+        return;
+    }
+
+    if (size > 8 * 1048576) {
+        fprintf(
+            stderr,
+            "File size exceeds 8 MB: %s\n"
+            "Copying large files is not implemented.\n",
+            from_path
+        );
+        return;
+    }
+
+    int from_fd = open(from_path, O_RDONLY);
+    if (from_fd == -1) {
+        char msg[15 + strlen(from_path) + 1];
+        sprintf(msg, "Could not open %s", from_path);
+        perror(msg);
+        return;
+    }
+
+    int to_fd;
+    if (to_exists)
+        to_fd = open(to_path, O_WRONLY | O_TRUNC);
+    else
+        to_fd = open(
+            to_path,
+            O_WRONLY | O_TRUNC | O_CREAT,
+            mode & ~(S_ISUID | S_ISGID)
+        );
+
+    if (to_fd == -1) {
+        char msg[15 + strlen(to_path) + 1];
+        sprintf(msg, "Could not open %s", to_path);
+        perror(msg);
+        close(from_fd);
+        return;
+    }
+
+    char* data = mmap(NULL, size, PROT_READ, MAP_FILE | MAP_PRIVATE, from_fd, 0);
+    if (data == MAP_FAILED) {
+        perror("mmap failed");
+        goto error;
+    }
+
+    madvise(data, size, MADV_SEQUENTIAL);
+    if (write(to_fd, data, size) != size) {
+        perror("Could not write file");
+        goto error;
+    }
+
+    if (munmap(data, size) == -1)
+        perror("munmap failed");
+
+error:
+    close(to_fd);
+    close(from_fd);
+    return;
 }
 
 int main(int argc, char* argv[argc+1]) {
@@ -251,36 +344,70 @@ int main(int argc, char* argv[argc+1]) {
     struct file_data* dest_head = get_sentinel_node();
     get_file_list(dest_head, destination_path);
 
-    size_t destlen = strlen(destination_path);
+    for (struct file_data* src = src_head->next; src; src = src->next) {
+        printf("\nFull path:     %s\n", src->full_path);
+        printf("Relative path: %s\n", src->relative_path);
+        printf("File size: %lld\n", src->size);
 
-    for (struct file_data* it = src_head->next; it; it = it->next) {
-        printf("\nFull path:     %s\n", it->full_path);
-        printf("Relative path: %s\n", it->relative_path);
-        printf("File size: %lld\n", it->size);
-
-        bool copy_file = false;
-        struct file_data* previous = search_list(dest_head, it->relative_path);
+        bool copy = false;
+        struct file_data* previous = search_list(dest_head, src->relative_path);
+        struct file_data* destination_file = NULL;
         if (previous) {
-            struct file_data* destination_file = previous->next;
+            destination_file = previous->next;
 
             printf("Found at destination: %s\n", destination_file->full_path);
 
-            time_t const* mtime = &it->mtime;
+            time_t const* mtime = &src->mtime;
             printf("Source mtime:      %s", ctime(mtime));
             mtime = &destination_file->mtime;
             printf("Destination mtime: %s", ctime(mtime));
 
-            double time_diff = difftime(it->mtime, destination_file->mtime);
+            double time_diff = difftime(src->mtime, destination_file->mtime);
             printf("Mtime diff: %g\n", time_diff);
-            if (time_diff > 0.0) copy_file = true; 
-            list_remove(previous);
+            if (time_diff > 0.0)
+                copy = true;
+            else
+                list_remove(previous);
         } else {
             printf("Not found at destination.\n");
-            copy_file = true;
+            copy = true;
         }
 
-        if (copy_file) {
-            printf("File must be copied:\n");
+        if (copy) {
+            printf("File must be copied.\n");
+            if (destination_file) {
+                copy_file(
+                    src->full_path, 
+                    destination_file->full_path, 
+                    src->size,
+                    src->mode,
+                    true
+                );
+                list_remove(previous);
+            } else {
+                size_t destlen = strlen(destination_path);
+                size_t rplen = strlen(src->relative_path);
+                char* dest_full_path = malloc((destlen + rplen + 1) * sizeof *dest_full_path);
+                if (dest_full_path) {
+                    strncpy(dest_full_path, destination_path, destlen + 1);
+                    strncat(dest_full_path, src->relative_path, rplen);
+                    copy_file(
+                        src->full_path,
+                        dest_full_path,
+                        src->size,
+                        src->mode,
+                        false
+                    );
+                    free(dest_full_path);
+                } else {
+                    fprintf(
+                        stderr, 
+                        "Could not allocate memory for destination path.\n"
+                        "File won't be copied: %s\n",
+                        src->relative_path
+                    );
+                }
+            }
         } else {
             printf("File won't be copied.\n");
         }
