@@ -11,7 +11,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "0.9 (2022-11-10)"
+#define VERSION "1.0 (2022-11-12)"
+
+//#define DEBUG
 
 struct file_data {
     char* relative_path;
@@ -405,37 +407,46 @@ int main(int argc, char* argv[argc+1]) {
     struct file_data* dest_head = get_sentinel_node();
     get_file_list(dest_head, destination_path);
 
+    printf("\n");
+
     for (struct file_data* src = src_head->next; src; src = src->next) {
+#ifdef DEBUG
         printf("\nFull path:     %s\n", src->full_path);
         printf("Relative path: %s\n", src->relative_path);
         printf("File size: %lld\n", (long long)src->size);
-
+#endif
         bool copy = false;
         struct file_data* previous = search_list(dest_head, src->relative_path);
         struct file_data* destination_file = NULL;
         if (previous) {
             destination_file = previous->next;
 
+#ifdef DEBUG
             printf("Found at destination: %s\n", destination_file->full_path);
 
             time_t const* mtime = &src->mtime;
             printf("Source mtime:      %s", ctime(mtime));
             mtime = &destination_file->mtime;
             printf("Destination mtime: %s", ctime(mtime));
+#endif
 
             double time_diff = difftime(src->mtime, destination_file->mtime);
+
+#ifdef DEBUG
             printf("Mtime diff: %g\n", time_diff);
-            if (time_diff > 0.0)
+#endif
+
+            if (time_diff > 0.0) {
                 copy = true;
-            else
+                printf("%s: outdated.\n", src->relative_path);
+            } else
                 list_remove(previous);
         } else {
-            printf("Not found at destination.\n");
             copy = true;
+            printf("%s: does not exist at destination.\n", src->relative_path);
         }
 
         if (copy) {
-            printf("File must be copied.\n");
             if (destination_file) {
                 copy_file(
                     src->full_path, 
@@ -472,11 +483,10 @@ int main(int argc, char* argv[argc+1]) {
                     );
                 }
             }
-        } else {
-            printf("File won't be copied.\n");
         }
     }
 
+#ifdef DEBUG
     printf("\nFiles not present in source:\n");
     struct file_data* file = dest_head->next;
     while (file) {
@@ -484,6 +494,7 @@ int main(int argc, char* argv[argc+1]) {
         printf("\tRelative path: %s\n", file->relative_path);
         file = file->next;
     }
+#endif
 
     free_list(src_head);
     free_list(dest_head);
