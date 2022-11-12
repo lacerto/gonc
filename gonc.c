@@ -11,7 +11,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "0.9 (2022-11-10)"
+#define VERSION "1.0 (2022-11-12)"
+
+//#define DEBUG
 
 struct file_data {
     char* relative_path;
@@ -309,6 +311,67 @@ error:
     return;
 }
 
+/*
+Creates all the intermediate directories in the path if they
+do not exist.
+The full path consists of 'base' and 'relative'. 'base' must
+exist and be a directory, this function only cares about the
+directories in the 'relative' path.
+Returns true if all directories have been created successfully,
+false in the case of any errors.
+Terminates the whole program if memory cannot be allocated.
+*/
+bool create_path(char const*const base, char const*const relative) {
+    struct stat dir_stat;
+
+    size_t base_len = strlen(base);
+    size_t relative_len = strlen(relative);
+
+    char* full_path = malloc((base_len + relative_len + 1) * sizeof *full_path);
+    if (full_path == NULL) {
+        perror("Could not allocate memory for path (create_path)");
+        exit(EXIT_FAILURE);
+    }
+
+    strncpy(full_path, base, base_len + 1);
+    strncat(full_path, relative, relative_len);
+
+    // position p at the start of the relative path
+    char* p = full_path + base_len;
+
+    while(true) {
+        p += strspn(p, "/");
+		p += strcspn(p, "/");
+        if (*p == '\0') break;
+
+		*p = '\0';
+
+        if (stat(full_path, &dir_stat) == -1) {
+            if (errno == ENOENT) {
+                if (mkdir(full_path, 0777) == -1) {
+                    perror("Could not create directory");
+                    free(full_path);
+                    return false;
+                }
+            } else {
+                perror("Could not check directory, stat failed");
+                free(full_path);
+                return false;
+            }
+        } else {
+            if (!S_ISDIR(dir_stat.st_mode)) {
+                fprintf(stderr, "Not a directory: %s\n", full_path);
+                free(full_path);
+                return false;
+            }
+        }
+
+        *p = '/';
+    }
+    free(full_path);
+    return true;
+}
+
 int main(int argc, char* argv[argc+1]) {
 
     switch (argc) {
@@ -344,37 +407,46 @@ int main(int argc, char* argv[argc+1]) {
     struct file_data* dest_head = get_sentinel_node();
     get_file_list(dest_head, destination_path);
 
+    printf("\n");
+
     for (struct file_data* src = src_head->next; src; src = src->next) {
+#ifdef DEBUG
         printf("\nFull path:     %s\n", src->full_path);
         printf("Relative path: %s\n", src->relative_path);
-        printf("File size: %lld\n", src->size);
-
+        printf("File size: %lld\n", (long long)src->size);
+#endif
         bool copy = false;
         struct file_data* previous = search_list(dest_head, src->relative_path);
         struct file_data* destination_file = NULL;
         if (previous) {
             destination_file = previous->next;
 
+#ifdef DEBUG
             printf("Found at destination: %s\n", destination_file->full_path);
 
             time_t const* mtime = &src->mtime;
             printf("Source mtime:      %s", ctime(mtime));
             mtime = &destination_file->mtime;
             printf("Destination mtime: %s", ctime(mtime));
+#endif
 
             double time_diff = difftime(src->mtime, destination_file->mtime);
+
+#ifdef DEBUG
             printf("Mtime diff: %g\n", time_diff);
-            if (time_diff > 0.0)
+#endif
+
+            if (time_diff > 0.0) {
                 copy = true;
-            else
+                printf("%s: outdated.\n", src->relative_path);
+            } else
                 list_remove(previous);
         } else {
-            printf("Not found at destination.\n");
             copy = true;
+            printf("%s: does not exist at destination.\n", src->relative_path);
         }
 
         if (copy) {
-            printf("File must be copied.\n");
             if (destination_file) {
                 copy_file(
                     src->full_path, 
@@ -391,13 +463,16 @@ int main(int argc, char* argv[argc+1]) {
                 if (dest_full_path) {
                     strncpy(dest_full_path, destination_path, destlen + 1);
                     strncat(dest_full_path, src->relative_path, rplen);
-                    copy_file(
-                        src->full_path,
-                        dest_full_path,
-                        src->size,
-                        src->mode,
-                        false
-                    );
+
+                    if (create_path(destination_path, src->relative_path)) {
+                        copy_file(
+                            src->full_path,
+                            dest_full_path,
+                            src->size,
+                            src->mode,
+                            false
+                        );
+                    }
                     free(dest_full_path);
                 } else {
                     fprintf(
@@ -408,11 +483,10 @@ int main(int argc, char* argv[argc+1]) {
                     );
                 }
             }
-        } else {
-            printf("File won't be copied.\n");
         }
     }
 
+#ifdef DEBUG
     printf("\nFiles not present in source:\n");
     struct file_data* file = dest_head->next;
     while (file) {
@@ -420,6 +494,7 @@ int main(int argc, char* argv[argc+1]) {
         printf("\tRelative path: %s\n", file->relative_path);
         file = file->next;
     }
+#endif
 
     free_list(src_head);
     free_list(dest_head);
