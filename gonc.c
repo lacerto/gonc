@@ -11,7 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "1.0 (2022-11-12)"
+#define VERSION "1.1 (2022-11-13)"
 
 //#define DEBUG
 
@@ -189,6 +189,11 @@ void get_file_list(struct file_data* head, char* const dirpath) {
 
     while ( (file = fts_read(file_hierarchy)) != NULL ) {
         if (file->fts_info == FTS_F) {
+            // skip dotfiles
+            if (file->fts_namelen > 1) {
+                if (file->fts_name[0] == '.') continue;
+            }
+
             struct file_data* current = malloc(sizeof *current);
             if (current == NULL) {
                 sprintf(error_text, "Could not allocate memory for file data");
