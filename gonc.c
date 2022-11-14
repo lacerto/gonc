@@ -11,7 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "1.1 (2022-11-13)"
+#define VERSION "1.2 (2022-11-14)"
 
 //#define DEBUG
 
@@ -245,9 +245,10 @@ See open(2).
 This function expects that 'to_path' has already been tested and
 whether it exists or not will be passed as a boolean value in
 'to_exists'.
-Error messages go to stderr and the function returns to the caller.
+Error messages go to stderr and the function returns false to the
+caller. Return value is true if the copy had been succeessful.
 */
-void copy_file(
+bool copy_file(
     char const*const from_path, 
     char const*const to_path, 
     off_t size,
@@ -255,26 +256,26 @@ void copy_file(
     bool to_exists
 ) {
     if (size == 0) {
-        fprintf(stderr, "File size is 0: %s\n", from_path);
-        return;
+        fprintf(stderr, "\tFile size is 0: %s\n", from_path);
+        return false;
     }
 
     if (size > 8 * 1048576) {
         fprintf(
             stderr,
-            "File size exceeds 8 MB: %s\n"
-            "Copying large files is not implemented.\n",
+            "\tFile size exceeds 8 MB: %s\n"
+            "\tCopying large files is not implemented.\n",
             from_path
         );
-        return;
+        return false;
     }
 
     int from_fd = open(from_path, O_RDONLY);
     if (from_fd == -1) {
         char msg[15 + strlen(from_path) + 1];
-        sprintf(msg, "Could not open %s", from_path);
+        sprintf(msg, "\tCould not open %s", from_path);
         perror(msg);
-        return;
+        return false;
     }
 
     int to_fd;
@@ -289,31 +290,35 @@ void copy_file(
 
     if (to_fd == -1) {
         char msg[15 + strlen(to_path) + 1];
-        sprintf(msg, "Could not open %s", to_path);
+        sprintf(msg, "\tCould not open %s", to_path);
         perror(msg);
         close(from_fd);
-        return;
+        return false;
     }
 
     char* data = mmap(NULL, size, PROT_READ, MAP_FILE | MAP_PRIVATE, from_fd, 0);
     if (data == MAP_FAILED) {
-        perror("mmap failed");
+        perror("\tmmap failed.");
         goto error;
     }
 
     madvise(data, size, MADV_SEQUENTIAL);
     if (write(to_fd, data, size) != size) {
-        perror("Could not write file");
+        perror("\tCould not write destination file.");
         goto error;
     }
 
-    if (munmap(data, size) == -1)
-        perror("munmap failed");
+    if (munmap(data, size) == -1) {
+        perror("\tmunmap failed.");
+        goto error;
+    }
+
+    return true;
 
 error:
     close(to_fd);
     close(from_fd);
-    return;
+    return false;
 }
 
 /*
@@ -412,12 +417,10 @@ int main(int argc, char* argv[argc+1]) {
     struct file_data* dest_head = get_sentinel_node();
     get_file_list(dest_head, destination_path);
 
-    printf("\n");
-
     for (struct file_data* src = src_head->next; src; src = src->next) {
 #ifdef DEBUG
         printf("\nFull path:     %s\n", src->full_path);
-        printf("Relative path: %s\n", src->relative_path);
+        printf("Relative path:   %s:\n", src->relative_path);
         printf("File size: %lld\n", (long long)src->size);
 #endif
         bool copy = false;
@@ -443,17 +446,19 @@ int main(int argc, char* argv[argc+1]) {
 
             if (time_diff > 0.0) {
                 copy = true;
-                printf("%s: outdated.\n", src->relative_path);
+                printf("\n%s:\n", src->relative_path);
+                printf("\tFile is outdated.\n");
             } else
                 list_remove(previous);
         } else {
             copy = true;
-            printf("%s: does not exist at destination.\n", src->relative_path);
+            printf("\n%s:\n", src->relative_path);
+            printf("\tFile does not exist at destination.\n");
         }
 
         if (copy) {
             if (destination_file) {
-                copy_file(
+                bool copy_success = copy_file(
                     src->full_path, 
                     destination_file->full_path, 
                     src->size,
@@ -461,6 +466,8 @@ int main(int argc, char* argv[argc+1]) {
                     true
                 );
                 list_remove(previous);
+                if (copy_success)
+                    printf("\tUpdated.\n");
             } else {
                 size_t destlen = strlen(destination_path);
                 size_t rplen = strlen(src->relative_path);
@@ -470,13 +477,15 @@ int main(int argc, char* argv[argc+1]) {
                     strncat(dest_full_path, src->relative_path, rplen);
 
                     if (create_path(destination_path, src->relative_path)) {
-                        copy_file(
+                        bool copy_success = copy_file(
                             src->full_path,
                             dest_full_path,
                             src->size,
                             src->mode,
                             false
                         );
+                        if (copy_success)
+                            printf("\tCreated.\n");
                     }
                     free(dest_full_path);
                 } else {
