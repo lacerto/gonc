@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.2] - 2022-11-14
+
+### Changed
+
+* Give better feedback to the user about which files are updated or created.
+
 ## [1.1] - 2022-11-13
 
 ### Added
