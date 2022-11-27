@@ -11,7 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "1.2 (2022-11-14)"
+#define VERSION "1.3 (2022-11-27)"
 
 //#define DEBUG
 
@@ -31,10 +31,11 @@ void print_version() {
 void print_usage() {
     printf("\nSynchronizes gopher directories.\n\n");
     printf("Usage:\n");
-    printf("\tgonc source_dir destination_dir\n");
+    printf("\tgonc [-d] source_dir destination_dir\n");
     printf("\tgonc -h\n");
     printf("\tgonc -v\n");
     printf("\nOptions:\n");
+    printf("\t-d\tDelete files at destination that are not in source.\n");
     printf("\t-h\tShow this help.\n");
     printf("\t-v\tShow the version number.\n");
 }
@@ -383,27 +384,40 @@ bool create_path(char const*const base, char const*const relative) {
 }
 
 int main(int argc, char* argv[argc+1]) {
+    extern int optind;
+    char ch;
+    bool delete_flag = false;
 
-    switch (argc) {
-        case 3:
-            print_version();
-            break;
-        case 2:
-            if (strncmp(argv[1], "-h", 2) == 0) {
-                print_usage();
-                return EXIT_SUCCESS;
-            } else if (strncmp(argv[1], "-v", 2) == 0) {
+    while ((ch = getopt(argc, argv, "hvd")) != -1) {
+        switch (ch) {
+            case 'v':
                 print_version();
                 return EXIT_SUCCESS;
-            }
-            // falls through
-        default:
-            print_usage();
-            return EXIT_FAILURE;
+            case 'h':
+                print_usage();
+                return EXIT_SUCCESS;
+            case 'd':
+                delete_flag = true;
+                break;
+            case '?':
+            default:
+                print_usage();
+                return EXIT_FAILURE;
+        }
     }
 
-    char* const source_path = argv[1];
-    char* const destination_path = argv[2];
+    argc -= optind;
+    argv += optind;
+
+    if (argc != 2) {
+        print_usage();
+        return EXIT_FAILURE;
+    }
+
+    print_version();
+
+    char* const source_path = argv[0];
+    char* const destination_path = argv[1];
 
     remove_trailing_slash(source_path);
     remove_trailing_slash(destination_path);
@@ -500,15 +514,17 @@ int main(int argc, char* argv[argc+1]) {
         }
     }
 
-#ifdef DEBUG
-    printf("\nFiles not present in source:\n");
-    struct file_data* file = dest_head->next;
-    while (file) {
-        printf("\tFull path:     %s\n", file->full_path);
-        printf("\tRelative path: %s\n", file->relative_path);
-        file = file->next;
+    if (delete_flag) {
+        printf("\nDeleting files not present in source:\n");
+        struct file_data* file = dest_head->next;
+        while (file) {
+            printf("\t%s\n", file->full_path);
+            if (unlink(file->full_path) != 0) {
+                perror("\t\tCould not delete file");
+            }
+            file = file->next;
+        }
     }
-#endif
 
     free_list(src_head);
     free_list(dest_head);
