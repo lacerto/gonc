@@ -383,27 +383,36 @@ bool create_path(char const*const base, char const*const relative) {
 }
 
 int main(int argc, char* argv[argc+1]) {
+    extern int optind;
+    char ch;
 
-    switch (argc) {
-        case 3:
-            print_version();
-            break;
-        case 2:
-            if (strncmp(argv[1], "-h", 2) == 0) {
-                print_usage();
-                return EXIT_SUCCESS;
-            } else if (strncmp(argv[1], "-v", 2) == 0) {
+    while ((ch = getopt(argc, argv, "hv")) != -1) {
+        switch (ch) {
+            case 'v':
                 print_version();
                 return EXIT_SUCCESS;
-            }
-            // falls through
-        default:
-            print_usage();
-            return EXIT_FAILURE;
+            case 'h':
+                print_usage();
+                return EXIT_SUCCESS;
+            case '?':
+            default:
+                print_usage();
+                return EXIT_FAILURE;
+        }
     }
 
-    char* const source_path = argv[1];
-    char* const destination_path = argv[2];
+    argc -= optind;
+    argv += optind;
+
+    if (argc != 2) {
+        print_usage();
+        return EXIT_FAILURE;
+    }
+
+    print_version();
+
+    char* const source_path = argv[0];
+    char* const destination_path = argv[1];
 
     remove_trailing_slash(source_path);
     remove_trailing_slash(destination_path);
