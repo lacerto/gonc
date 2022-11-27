@@ -11,7 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "1.2 (2022-11-14)"
+#define VERSION "1.3 (2022-11-27)"
 
 //#define DEBUG
 
@@ -31,10 +31,11 @@ void print_version() {
 void print_usage() {
     printf("\nSynchronizes gopher directories.\n\n");
     printf("Usage:\n");
-    printf("\tgonc source_dir destination_dir\n");
+    printf("\tgonc [-d] source_dir destination_dir\n");
     printf("\tgonc -h\n");
     printf("\tgonc -v\n");
     printf("\nOptions:\n");
+    printf("\t-d\tDelete files at destination that are not in source.\n");
     printf("\t-h\tShow this help.\n");
     printf("\t-v\tShow the version number.\n");
 }

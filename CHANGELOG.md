@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3] - 2022-11-27
+
+### Added
+
+* Using switch `-d` files at destination that are *not* present in the source directory will be deleted.
+
 ## [1.2] - 2022-11-14
 
 ### Changed
