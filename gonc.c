@@ -385,8 +385,9 @@ bool create_path(char const*const base, char const*const relative) {
 int main(int argc, char* argv[argc+1]) {
     extern int optind;
     char ch;
+    bool delete_flag = false;
 
-    while ((ch = getopt(argc, argv, "hv")) != -1) {
+    while ((ch = getopt(argc, argv, "hvd")) != -1) {
         switch (ch) {
             case 'v':
                 print_version();
@@ -394,6 +395,9 @@ int main(int argc, char* argv[argc+1]) {
             case 'h':
                 print_usage();
                 return EXIT_SUCCESS;
+            case 'd':
+                delete_flag = true;
+                break;
             case '?':
             default:
                 print_usage();
@@ -509,15 +513,17 @@ int main(int argc, char* argv[argc+1]) {
         }
     }
 
-#ifdef DEBUG
-    printf("\nFiles not present in source:\n");
-    struct file_data* file = dest_head->next;
-    while (file) {
-        printf("\tFull path:     %s\n", file->full_path);
-        printf("\tRelative path: %s\n", file->relative_path);
-        file = file->next;
+    if (delete_flag) {
+        printf("\nDeleting files not present in source:\n");
+        struct file_data* file = dest_head->next;
+        while (file) {
+            printf("\t%s\n", file->full_path);
+            if (unlink(file->full_path) != 0) {
+                perror("\t\tCould not delete file");
+            }
+            file = file->next;
+        }
     }
-#endif
 
     free_list(src_head);
     free_list(dest_head);
