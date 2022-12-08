@@ -387,8 +387,9 @@ int main(int argc, char* argv[argc+1]) {
     extern int optind;
     char ch;
     bool delete_flag = false;
+    bool dry_run_flag = false;
 
-    while ((ch = getopt(argc, argv, "hvd")) != -1) {
+    while ((ch = getopt(argc, argv, "hvdn")) != -1) {
         switch (ch) {
             case 'v':
                 print_version();
@@ -398,6 +399,9 @@ int main(int argc, char* argv[argc+1]) {
                 return EXIT_SUCCESS;
             case 'd':
                 delete_flag = true;
+                break;
+            case 'n':
+                dry_run_flag = true;
                 break;
             case '?':
             default:
@@ -415,6 +419,8 @@ int main(int argc, char* argv[argc+1]) {
     }
 
     print_version();
+
+    if (dry_run_flag) printf("\n** DRY RUN **\n");
 
     char* const source_path = argv[0];
     char* const destination_path = argv[1];
@@ -470,7 +476,7 @@ int main(int argc, char* argv[argc+1]) {
             printf("\tFile does not exist at destination.\n");
         }
 
-        if (copy) {
+        if (copy && !dry_run_flag) {
             if (destination_file) {
                 bool copy_success = copy_file(
                     src->full_path, 
@@ -519,8 +525,10 @@ int main(int argc, char* argv[argc+1]) {
         struct file_data* file = dest_head->next;
         while (file) {
             printf("\t%s\n", file->full_path);
-            if (unlink(file->full_path) != 0) {
-                perror("\t\tCould not delete file");
+            if (!dry_run_flag) {
+                if (unlink(file->full_path) != 0) {
+                    perror("\t\tCould not delete file");
+                }
             }
             file = file->next;
         }
