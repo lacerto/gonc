@@ -11,7 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define VERSION "1.3 (2022-11-27)"
+#define VERSION "1.4 (2022-12-09)"
 
 //#define DEBUG
 
@@ -31,11 +31,12 @@ void print_version() {
 void print_usage() {
     printf("\nSynchronizes gopher directories.\n\n");
     printf("Usage:\n");
-    printf("\tgonc [-d] source_dir destination_dir\n");
+    printf("\tgonc [-d] [-n] source_dir destination_dir\n");
     printf("\tgonc -h\n");
     printf("\tgonc -v\n");
     printf("\nOptions:\n");
     printf("\t-d\tDelete files at destination that are not in source.\n");
+    printf("\t-n\tDry run. No files will be copied or deleted.\n");
     printf("\t-h\tShow this help.\n");
     printf("\t-v\tShow the version number.\n");
 }
@@ -261,16 +262,6 @@ bool copy_file(
         return false;
     }
 
-    if (size > 8 * 1048576) {
-        fprintf(
-            stderr,
-            "\tFile size exceeds 8 MB: %s\n"
-            "\tCopying large files is not implemented.\n",
-            from_path
-        );
-        return false;
-    }
-
     int from_fd = open(from_path, O_RDONLY);
     if (from_fd == -1) {
         char msg[15 + strlen(from_path) + 1];
@@ -297,6 +288,41 @@ bool copy_file(
         return false;
     }
 
+    // file is larger than 8 MB
+    if (size > 8 * 1048576) {
+        const size_t buf_size = 64 * 1024;
+        char *buf;
+        ssize_t bytes_read;
+        ssize_t bytes_written;
+        bool error_occurred = false;
+
+        buf = malloc(buf_size);
+        if (buf == NULL) {
+            perror("Could not allocate memory for buffer (copy_file)");
+            goto error;
+        }
+
+        while ((bytes_read = read(from_fd, buf, buf_size)) > 0) {
+            bytes_written = write(to_fd, buf, bytes_read);
+            if (bytes_read != bytes_written || bytes_written == -1) {
+                if (errno) {
+                    perror(NULL);
+                }
+                fprintf(stderr, "\tCopy error, number of read & written bytes do not match.\n");
+                goto error;
+            }
+        }
+
+        if (bytes_read == -1) {
+            perror(NULL);
+            goto error;
+        }
+
+        close(to_fd);
+        close(from_fd);
+        return true;
+    }
+
     char* data = mmap(NULL, size, PROT_READ, MAP_FILE | MAP_PRIVATE, from_fd, 0);
     if (data == MAP_FAILED) {
         perror("\tmmap failed.");
@@ -314,6 +340,8 @@ bool copy_file(
         goto error;
     }
 
+    close(to_fd);
+    close(from_fd);
     return true;
 
 error:
@@ -387,8 +415,9 @@ int main(int argc, char* argv[argc+1]) {
     extern int optind;
     char ch;
     bool delete_flag = false;
+    bool dry_run_flag = false;
 
-    while ((ch = getopt(argc, argv, "hvd")) != -1) {
+    while ((ch = getopt(argc, argv, "hvdn")) != -1) {
         switch (ch) {
             case 'v':
                 print_version();
@@ -398,6 +427,9 @@ int main(int argc, char* argv[argc+1]) {
                 return EXIT_SUCCESS;
             case 'd':
                 delete_flag = true;
+                break;
+            case 'n':
+                dry_run_flag = true;
                 break;
             case '?':
             default:
@@ -415,6 +447,8 @@ int main(int argc, char* argv[argc+1]) {
     }
 
     print_version();
+
+    if (dry_run_flag) printf("\n** DRY RUN **\n");
 
     char* const source_path = argv[0];
     char* const destination_path = argv[1];
@@ -470,7 +504,7 @@ int main(int argc, char* argv[argc+1]) {
             printf("\tFile does not exist at destination.\n");
         }
 
-        if (copy) {
+        if (copy && !dry_run_flag) {
             if (destination_file) {
                 bool copy_success = copy_file(
                     src->full_path, 
@@ -519,8 +553,10 @@ int main(int argc, char* argv[argc+1]) {
         struct file_data* file = dest_head->next;
         while (file) {
             printf("\t%s\n", file->full_path);
-            if (unlink(file->full_path) != 0) {
-                perror("\t\tCould not delete file");
+            if (!dry_run_flag) {
+                if (unlink(file->full_path) != 0) {
+                    perror("\t\tCould not delete file");
+                }
             }
             file = file->next;
         }
