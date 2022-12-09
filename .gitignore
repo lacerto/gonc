@@ -59,3 +59,6 @@ gonc
 
 # Test directory
 test/
+
+# macOS
+.DS_Store
