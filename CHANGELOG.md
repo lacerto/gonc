@@ -1,10 +1,15 @@
 # Changelog
 
-## [1.3] - 2022-11-27
+## [1.4] - 2022-12-09
 
 ### Added
 
+* Switch `-n` starts a dry run. No files will be copied or deleted.
 * Using switch `-d` files at destination that are *not* present in the source directory will be deleted.
+
+### Changed
+
+* Files larger than 8 MB can also be copied.
 
 ## [1.2] - 2022-11-14
 
